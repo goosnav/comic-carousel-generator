@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="token" content="{{TOKEN}}">
+  <title>Comic Carousel Generator</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Comic Carousel Generator</h1>
+</header>
+<main>
+  <section>
+    <h2>Scans</h2>
+    <p>
+      <button id="browse" type="button">Browse…</button>
+      <output id="status">Pick one or more scanned comics. I find the panels and export them.</output>
+    </p>
+    <p><label><input id="review" type="checkbox"> Show me the boxes before exporting</label></p>
+    <details>
+      <summary>Export somewhere else</summary>
+      <p>
+        <label for="parent">Folder</label>
+        <input id="parent" type="text" size="48" placeholder="Empty = a carousel-export folder beside each scan">
+      </p>
+    </details>
+  </section>
+
+  <section>
+    <h2>Results</h2>
+    <table id="results">
+      <thead>
+        <tr><th scope="col">Scan</th><th scope="col">Panels</th><th scope="col">Result</th><th scope="col">Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="editor" hidden>
+    <h2>Boxes</h2>
+    <p id="editor-name"></p>
+    <figure>
+      <img id="preview" alt="Scanned page with the detected panel boxes drawn over it">
+      <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <figcaption>Drag a box to move it. Drag a corner to resize it. Click a box, then press Delete to remove it. Numbers are the export order.</figcaption>
+    </figure>
+    <p>
+      <button id="add" type="button">Add a box</button>
+      <label for="layout">Summary layout</label>
+      <select id="layout"></select>
+    </p>
+    <ol id="list"></ol>
+    <h3>Preview</h3>
+    <ul id="thumbs"></ul>
+    <p>
+      <button id="export" type="button">Export</button>
+      <button id="cancel" type="button">Skip this one</button>
+    </p>
+  </section>
+</main>
+<footer>
+  <p><button id="quit" type="button">Quit</button> <small>Runs on this computer only.</small></p>
+</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

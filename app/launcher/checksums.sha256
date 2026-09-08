@@ -1,0 +1,7 @@
+# Replace each placeholder with the SHA-256 of the pinned uv executable.
+# Windows ARM64 is absent on purpose: no opencv-python-headless wheel. See dev/DECISIONS.txt.
+PLACEHOLDER  launcher/tools/macos-x64/uv
+PLACEHOLDER  launcher/tools/macos-arm64/uv
+PLACEHOLDER  launcher/tools/windows-x64/uv.exe
+PLACEHOLDER  launcher/tools/linux-x64/uv
+PLACEHOLDER  launcher/tools/linux-arm64/uv

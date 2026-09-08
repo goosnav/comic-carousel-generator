@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "app_id": "com.goosnav.comic-carousel-generator",
+  "display_name": "Comic Carousel Generator",
+  "python": "3.12.10",
+  "entry_module": "comic_carousel.start",
+  "ready_path": "/health/ready",
+  "startup_timeout_seconds": 180,
+  "preferred_port": 0,
+  "data_directory_name": "ComicCarouselGenerator"
+}
