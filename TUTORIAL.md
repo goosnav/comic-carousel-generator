@@ -21,12 +21,19 @@ then start the app again.
 
 ## 2. Export a comic
 
-1. Press **Browse…**. The macOS file chooser opens. Pick a scan. You can select several
-   at once with shift-click or cmd-click.
-2. Wait about a second per scan.
-3. Each scan appears in the results table with the number of panels found and the folder
-   its PNGs went to, for example `Exported to carousel-export-001 (as-drawn)`.
-4. Press **Reveal** to open that folder in the Finder.
+1. Put your scans in one folder.
+2. Press **Choose a folder…** and pick that folder. You do not select the images one by
+   one: every image directly inside the folder is queued.
+3. Wait about a second per scan.
+4. Each scan appears in the results table with the number of panels found and the folder
+   its PNGs went to, for example `Exported to brain tumor raw-carousel-001 (as-drawn)`.
+5. Press **Reveal** to open that folder in the Finder.
+
+Every scan gets its own folder, named after the scan, next to it. Run the same folder
+again and each scan gets a `-002` folder; nothing earlier is touched. Folders inside the
+chosen folder are not searched, which is what keeps old output from being processed again.
+
+To do only some scans, press **Choose scans…** instead and shift-click or cmd-click them.
 
 Inside you get `panel_01.png`, `panel_02.png`, … in reading order (left to right, top to
 bottom), and `summary.png` with the whole comic laid out on one canvas. Every file is
@@ -34,7 +41,7 @@ bottom), and `summary.png` with the whole comic laid out on one canvas. Every fi
 
 ## 3. Check the boxes when you want to
 
-Tick **Show me the boxes before exporting** before you press Browse. The editor then opens
+Tick **Show me the boxes before exporting** before you choose your scans. The editor then opens
 for every scan instead of exporting straight away.
 
 It also opens on its own when I am unsure about a scan. The row says why: a weak border,
@@ -54,7 +61,8 @@ In the editor:
 
 The thumbnails under **Preview** are exactly what will be written, and they refresh a
 moment after every change. Press **Export** when it looks right, or **Skip this one** to
-move on without writing anything.
+move on without writing anything. After export, the panel count in the results table is
+the edited count, not the original automatic count.
 
 ## 4. Export somewhere else
 
@@ -65,10 +73,11 @@ default. The setting is remembered in your browser.
 ## 5. Batch from the terminal
 
 ```bash
+./run.sh ~/Scans
 ./run.sh ~/Scans/*.jpg --out ~/Desktop/carousels
 ```
 
-No window opens. One line is printed per scan, and the exit code is 2 if any scan needs a
+No window opens. A folder means every scan directly inside it. One line is printed per scan, and the exit code is 2 if any scan needs a
 look. Add `--layout stack` to force a summary layout for all of them.
 
 ## 6. Quitting
@@ -88,15 +97,16 @@ rectangle. Delete the merged box and add two.
 enclosed. Delete it in review mode; the numbering closes up on its own.
 
 **Everything is off by a small rotation.** The page is deskewed automatically from the
-panel borders. If a scan is more than a few degrees off, straighten it in your scanner
-software first.
+panel borders through about 12 degrees. If a scan is farther off, straighten it in your
+scanner software first.
 
 **The file chooser does not open on Linux.** Install `zenity`, which is what the app asks
 for the native dialog.
 
 ## What it does under the hood
 
-1. Read the scan, push paper to white and ink to black if it is not already black-and-white.
+1. Read the scan, make a temporary grayscale copy, and push paper to white and ink to black
+   on that copy for detection. The original color pixels stay available for rendering.
 2. Measure the page tilt from long straight strokes and rotate it back.
 3. Build a horizontal-line mask and a vertical-line mask with morphology, bridging pen-lift
    gaps but never gaps as wide as a gutter.
@@ -105,7 +115,9 @@ for the native dialog.
    gets four, which is how panels sharing a border are separated.
 5. Assemble rectangles from matching corner quadruples, and keep only those whose four
    sides are genuinely inked.
-6. Add nearly-rectangular outer contours as a second source, verified the same way.
+6. Add nearly-rectangular contours at every nesting level as a second source, verified the
+   same way. This recovers a panel even when connected artwork makes a whole row one outer
+   contour.
 7. Drop a rectangle that is mostly filled by other rectangles (the outline around a whole
    row), then any rectangle nested inside a kept one (a window drawn inside a panel).
 8. Grow each edge outward until the drawn border really ends, so no part of the square is

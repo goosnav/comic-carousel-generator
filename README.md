@@ -22,30 +22,40 @@ If `uv` is missing, the launcher prints the one-line install command and stops.
 
 ## Use it
 
-Press **Browse…**, choose one or more scans, and wait. Each scan gets a row in the results
-table naming the folder its PNGs went to. That is the whole job.
+Press **Choose a folder…** and pick the folder holding your scans. Every image directly
+inside it is processed, one after another, with no further clicks. Each scan gets a row in
+the results table naming the folder its PNGs went to. That is the whole job.
+
+**Choose scans…** does the same for a hand-picked set of files.
 
 Tick **Show me the boxes before exporting** when you want to check first. The editor also
 opens by itself for a scan I am unsure about, and the row says why.
 
-Exports land in a new numbered folder beside the scan:
+Each scan gets its own folder beside it, named after it:
 
 ```
-examples/brain tumor/
+Scans/
 ├── brain tumor raw.jpg
-└── carousel-export-001/
+├── brain tumor raw-carousel-001/
+│   ├── panel_01.png
+│   ├── panel_02.png
+│   ├── panel_03.png
+│   └── summary.png
+├── why am i alive raw.jpg
+└── why am i alive raw-carousel-001/
     ├── panel_01.png
     ├── panel_02.png
-    ├── panel_03.png
     └── summary.png
 ```
 
-Nothing is ever overwritten: the next export is `carousel-export-002`. Set a different
+Nothing is ever overwritten: running the same scan again makes `…-carousel-002`.
+Subfolders are not searched, so earlier output folders are never read back in as scans. Set a different
 parent folder under **Export somewhere else** if you want them elsewhere.
 
 ## Without the window
 
 ```bash
+./run.sh ~/Scans                                   # every scan in the folder
 ./run.sh "scan one.jpg" "scan two.jpg" --out ~/Desktop --layout stack
 ```
 

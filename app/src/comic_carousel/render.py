@@ -30,11 +30,13 @@ def _fit(w: int, h: int, max_w: float, max_h: float) -> tuple[int, int]:
 
 
 def blank() -> np.ndarray:
-    return np.full((CANVAS_H, CANVAS_W), 255, np.uint8)
+    return np.full((CANVAS_H, CANVAS_W, 3), 255, np.uint8)
 
 
 def paste(canvas: np.ndarray, img: np.ndarray, x: int, y: int) -> None:
-    h, w = img.shape
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    h, w = img.shape[:2]
     canvas[y:y + h, x:x + w] = img
 
 
@@ -119,25 +121,37 @@ def render_all(image: np.ndarray, boxes: list[Box], layout: str = "auto") -> tup
 
 # ---------------------------------------------------------------- export
 
-def next_export_dir(parent: Path) -> Path:
+UNSAFE_NAME_CHARS = '<>:"/\\|?*'
+
+
+def folder_stem(source_stem: str) -> str:
+    """A folder name that works on macOS, Windows and Linux."""
+    cleaned = "".join("_" if c in UNSAFE_NAME_CHARS or ord(c) < 32 else c for c in source_stem)
+    return cleaned.strip(" .") or "scan"
+
+
+def next_export_dir(parent: Path, source_stem: str = "scan") -> Path:
+    """<scan name>-carousel-001, -002, ... One folder per scan, never overwritten."""
+    stem = folder_stem(source_stem)
     n = 1
-    while (parent / f"carousel-export-{n:03d}").exists():
+    while (parent / f"{stem}-carousel-{n:03d}").exists():
         n += 1
-    target = parent / f"carousel-export-{n:03d}"
+    target = parent / f"{stem}-carousel-{n:03d}"
     target.mkdir(parents=True)
     return target
 
 
-def write_png(path: Path, gray: np.ndarray) -> None:
-    ok, buffer = cv2.imencode(".png", cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+def write_png(path: Path, image: np.ndarray) -> None:
+    ok, buffer = cv2.imencode(".png", image)
     if not ok:
         raise RuntimeError(f"PNG encoding failed for {path.name}")
     buffer.tofile(str(path))  # Unicode-safe on Windows
 
 
-def export(image: np.ndarray, boxes: list[Box], parent: Path, layout: str = "auto") -> tuple[Path, list[Path], str]:
+def export(image: np.ndarray, boxes: list[Box], parent: Path, layout: str = "auto",
+           source_stem: str = "scan") -> tuple[Path, list[Path], str]:
     panels, summary, chosen = render_all(image, boxes, layout)
-    target = next_export_dir(parent)
+    target = next_export_dir(parent, source_stem)
     files = []
     for i, canvas in enumerate(panels, 1):
         files.append(target / f"panel_{i:02d}.png")

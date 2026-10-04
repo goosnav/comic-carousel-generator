@@ -73,7 +73,7 @@ temp/
 /CLAUDE.md
 /CODEX.md
 /GEMINI.md
-carousel-export-*/
+*-carousel-[0-9][0-9][0-9]/
 app/.venv/
 
 # The user's scans and their hand-made Photoshop outputs. Regression fixtures, kept local:

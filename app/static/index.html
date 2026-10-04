@@ -15,15 +15,16 @@
   <section>
     <h2>Scans</h2>
     <p>
-      <button id="browse" type="button">Browse…</button>
-      <output id="status">Pick one or more scanned comics. I find the panels and export them.</output>
+      <button id="folder" type="button">Choose a folder…</button>
+      <button id="browse" type="button">Choose scans…</button>
+      <output id="status">Choose a folder and every scan in it becomes a carousel, each in its own folder.</output>
     </p>
     <p><label><input id="review" type="checkbox"> Show me the boxes before exporting</label></p>
     <details>
       <summary>Export somewhere else</summary>
       <p>
         <label for="parent">Folder</label>
-        <input id="parent" type="text" size="48" placeholder="Empty = a carousel-export folder beside each scan">
+        <input id="parent" type="text" size="48" placeholder="Empty = a folder named after each scan, beside it">
       </p>
     </details>
   </section>

@@ -16,10 +16,13 @@ import cv2
 import numpy as np
 
 WORK_WIDTH = 1600
+MIN_DESKEW_DEGREES = 0.25      # ignore scanner noise smaller than this
+MAX_DESKEW_DEGREES = 12.0      # still a scan; beyond this ask the user to straighten it
 CANVAS_MARGIN_FRACTION = 0.006   # white bleed kept outside the drawn border
 BORDER_REACH_FRACTION = 0.05     # how far outside a box the border stroke may still run
 BORDER_INK_SHARE = 0.25          # a line that far out is still the border at this ink share
 BORDER_GAP_TOLERANCE = 3         # pen lifts and paper speckle inside the walk
+CONTAINER_CHILD_MIN_COVERAGE = 0.60  # align with the weak-border confidence threshold
 MIN_AREA, MAX_AREA = 0.015, 0.90  # fraction of the page
 MIN_ASPECT, MAX_ASPECT = 0.25, 4.0
 
@@ -51,7 +54,8 @@ class Box:
 class Detection:
     boxes: list[Box]
     angle: float  # degrees the page was rotated to straighten it
-    image: np.ndarray  # deskewed full-resolution grayscale
+    render_image: np.ndarray  # deskewed full-resolution BGR source image
+    detection_image: np.ndarray  # deskewed full-resolution grayscale analysis image
     confident: bool = True
     reasons: list[str] = field(default_factory=list)
 
@@ -64,6 +68,14 @@ def load_gray(path: str | Path) -> np.ndarray:
     if gray is None:
         raise ValueError(f"Not an image I can read: {path}")
     return normalize_levels(gray)
+
+
+def _load_color(path: str | Path) -> np.ndarray:
+    data = np.fromfile(str(path), dtype=np.uint8)  # Unicode-safe on Windows
+    color = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if color is None:
+        raise ValueError(f"Not an image I can read: {path}")
+    return color
 
 
 def normalize_levels(gray: np.ndarray) -> np.ndarray:
@@ -92,10 +104,10 @@ def ink_mask(small: np.ndarray) -> np.ndarray:
 
 
 def estimate_skew(ink: np.ndarray) -> float:
-    """Length-weighted median tilt (degrees) of long near-axis strokes."""
+    """Length-squared-weighted tilt of long panel-border strokes."""
     w = ink.shape[1]
     lines = cv2.HoughLinesP(ink, 1, np.pi / 720, threshold=60,
-                            minLineLength=int(w * 0.05), maxLineGap=int(w * 0.006))
+                            minLineLength=int(w * 0.08), maxLineGap=int(w * 0.008))
     if lines is None:
         return 0.0
     angles, weights = [], []
@@ -103,9 +115,10 @@ def estimate_skew(ink: np.ndarray) -> float:
         a = np.degrees(np.arctan2(y1 - y0, x1 - x0)) % 90.0
         if a > 45.0:
             a -= 90.0
-        if abs(a) < 5.0:
+        if abs(a) <= MAX_DESKEW_DEGREES:
             angles.append(a)
-            weights.append(float(np.hypot(x1 - x0, y1 - y0)))
+            length = float(np.hypot(x1 - x0, y1 - y0))
+            weights.append(length * length)
     if not angles:
         return 0.0
     order = np.argsort(angles)
@@ -113,10 +126,10 @@ def estimate_skew(ink: np.ndarray) -> float:
     return float(np.array(angles)[order][np.searchsorted(cumulative, cumulative[-1] / 2)])
 
 
-def deskew(gray: np.ndarray, angle: float) -> np.ndarray:
-    h, w = gray.shape
+def deskew(image: np.ndarray, angle: float) -> np.ndarray:
+    h, w = image.shape[:2]
     matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
-    return cv2.warpAffine(gray, matrix, (w, h), flags=cv2.INTER_LINEAR,
+    return cv2.warpAffine(image, matrix, (w, h), flags=cv2.INTER_LINEAR,
                           borderMode=cv2.BORDER_CONSTANT, borderValue=255)
 
 
@@ -138,8 +151,8 @@ def line_masks(ink: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def find_corners(horizontal: np.ndarray, vertical: np.ndarray) -> list[tuple[int, int, set[str]]]:
     """Junctions of horizontal and vertical lines, typed by which arms exist."""
     h, w = horizontal.shape
-    d = max(int(w * 0.004), 3)
-    reach = max(int(w * 0.015), 8)
+    d = max(int(w * 0.01), 4)
+    reach = max(int(w * 0.03), 12)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * d + 1, 2 * d + 1))
     junctions = cv2.bitwise_and(cv2.dilate(horizontal, kernel), cv2.dilate(vertical, kernel))
     count, _labels, _stats, centroids = cv2.connectedComponentsWithStats(junctions)
@@ -210,11 +223,14 @@ def corner_candidates(corners, mask: np.ndarray) -> list[Box]:
 
 
 def contour_candidates(ink: np.ndarray, mask: np.ndarray) -> list[Box]:
-    """Second source: outer contours that are nearly rectangular (rounded corners, thick borders)."""
+    """Second source: verified rectangular contours from the full hierarchy."""
     w = mask.shape[1]
     band = max(int(w * 0.006), 4)
     closed = cv2.morphologyEx(ink, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # RETR_LIST recovers an individual panel even when artwork touches another border
+    # and makes the whole row one external contour. Verification and pruning remove
+    # speech bubbles, nested artwork, and duplicate inner/outer border contours.
+    contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     found = []
     for contour in contours:
         x, y, bw, bh = cv2.boundingRect(contour)
@@ -233,7 +249,9 @@ def prune(candidates: list[Box]) -> list[Box]:
     kept = []
     for box in candidates:
         inner = sum(o.area for o in candidates
-                    if o is not box and o.area < box.area and box.intersection(o) >= 0.8 * o.area)
+                    if o is not box and o.area < box.area
+                    and o.min_coverage >= CONTAINER_CHILD_MIN_COVERAGE
+                    and box.intersection(o) >= 0.8 * o.area)
         if inner < 0.5 * box.area:
             kept.append(box)
     kept.sort(key=lambda b: -b.area)
@@ -358,13 +376,32 @@ def assess(boxes: list[Box], width: int, height: int) -> list[str]:
 
 # ---------------------------------------------------------------- entry
 
-def detect(gray: np.ndarray) -> Detection:
-    small, scale = _shrink(gray)
+def detect(detection_image: np.ndarray, render_image: np.ndarray | None = None) -> Detection:
+    """Detect panels from grayscale while retaining the source pixels for rendering.
+
+    Direct grayscale callers remain supported for tests and simple integrations. In
+    that case the grayscale input is expanded to BGR only at the render boundary.
+    """
+    if detection_image.ndim == 3:
+        if render_image is not None:
+            raise ValueError("Pass either a color image or separate detection/render images, not both")
+        render_image = detection_image
+        detection_image = cv2.cvtColor(detection_image, cv2.COLOR_BGR2GRAY)
+    elif detection_image.ndim != 2:
+        raise ValueError("Detection image must be grayscale or BGR")
+    if render_image is None:
+        render_image = cv2.cvtColor(detection_image, cv2.COLOR_GRAY2BGR)
+    if render_image.ndim != 3 or render_image.shape[:2] != detection_image.shape[:2]:
+        raise ValueError("Render image must be a color image with matching dimensions")
+
+    detection_image = normalize_levels(detection_image)
+    small, scale = _shrink(detection_image)
     ink = ink_mask(small)
     angle = estimate_skew(ink)
-    if abs(angle) > 0.15:
-        gray = deskew(gray, angle)
-        small, scale = _shrink(gray)
+    if abs(angle) >= MIN_DESKEW_DEGREES:
+        detection_image = deskew(detection_image, angle)
+        render_image = deskew(render_image, angle)
+        small, scale = _shrink(detection_image)
         ink = ink_mask(small)
     else:
         angle = 0.0
@@ -372,16 +409,19 @@ def detect(gray: np.ndarray) -> Detection:
     mask = cv2.bitwise_or(horizontal, vertical)
     candidates = corner_candidates(find_corners(horizontal, vertical), mask)
     candidates += contour_candidates(ink, mask)
-    height, width = gray.shape
+    height, width = detection_image.shape[:2]
     snapped = []
     for box in prune(candidates):
         full = Box(int(box.x / scale), int(box.y / scale), int(box.w / scale), int(box.h / scale),
                    box.coverage, box.min_coverage, box.source)
-        snapped.append(snap_outward(gray, full))
+        snapped.append(snap_outward(detection_image, full))
     boxes = reading_order(add_bleed(snapped, width, height))
     reasons = assess(boxes, width, height)
-    return Detection(boxes=boxes, angle=angle, image=gray, confident=not reasons, reasons=reasons)
+    return Detection(boxes=boxes, angle=angle, render_image=render_image,
+                     detection_image=detection_image, confident=not reasons, reasons=reasons)
 
 
 def detect_file(path: str | Path) -> Detection:
-    return detect(load_gray(path))
+    color = _load_color(path)
+    gray = normalize_levels(cv2.cvtColor(color, cv2.COLOR_BGR2GRAY))
+    return detect(gray, color)

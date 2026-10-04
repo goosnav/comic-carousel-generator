@@ -102,3 +102,45 @@ Build the M1a launcher images: compile the Go supervisor from the skill's
 `assets/m1a-launcher/` for macOS universal, Windows x64, and Linux x86_64/ARM64; bundle the
 pinned `uv` tools with checksums; assemble the universal ZIP; then run the acceptance matrix
 on each claimed target.
+
+---
+
+# Run summary — 2026-10-04: whole-folder batch
+
+## What changed
+
+- **Choose a folder…** is now the first button. It opens the native folder chooser and
+  queues every image directly inside the folder; no per-image selection.
+- Each scan gets its own output folder beside it, named after it:
+  `<scan name>-carousel-001`, then `-002` on a re-run. Replaces the shared
+  `carousel-export-NNN` numbering.
+- `./run.sh FOLDER` does the same headlessly. Files and folders can be mixed.
+- Folder names are made safe for Windows, macOS and Linux.
+- Subfolders are not searched, so earlier output is never fed back in as scans.
+
+Also committed with this change: detection improvements that were already uncommitted in
+the working tree (colour preservation through to the PNGs, deskew up to 12 degrees,
+contour recovery at every nesting level, edited panel counts in the results table).
+
+## Commands and results
+
+```
+cd app && uv run --locked --managed-python python -m pytest ../tests -q
+30 passed
+
+./run.sh <folder holding the four example scans>
+brain tumor raw.jpg: 3 panels, exported to brain tumor raw-carousel-001
+LLM brain replacement raw.jpg: 2 panels, exported to LLM brain replacement raw-carousel-001
+the fish that bites loose dangling objects raw.jpg: 3 panels, exported to the fish that bites loose dangling objects raw-carousel-001
+why am i alive raw.jpg: 2 panels, exported to why am i alive raw-carousel-001
+exit=0   (about 2 s wall time)
+```
+
+GUI, in a real browser: the folder result was fed to the page and all four scans exported
+to their own `-carousel-002` folders with no further input. Empty folder and cancelled
+dialog both show a plain message.
+
+## Not verified
+
+- The native folder dialog itself was not clicked; it cannot be driven from the test
+  browser. The macOS AppleScript compiles. The Windows and Linux dialogs are untested.

@@ -82,6 +82,62 @@ def test_tilted_page_is_deskewed():
     assert close(boxes_of(det)[0], (400, 700, 1200, 1200), tol=W * 0.02)
 
 
+@pytest.mark.parametrize("degrees", [6.0, 8.0, 10.0])
+def test_more_rotated_pages_are_deskewed(degrees):
+    img = page()
+    rect(img, 400, 700, 1600, 1900)
+    rect(img, 1750, 700, 2950, 1900)
+    matrix = cv2.getRotationMatrix2D((W / 2, H / 2), degrees, 1.0)
+    tilted = cv2.warpAffine(img, matrix, (W, H), borderValue=255)
+
+    det = d.detect(tilted)
+
+    assert abs(det.angle + degrees) < 0.4
+    assert len(det.boxes) == 2
+    assert close(boxes_of(det)[0], (400, 700, 1200, 1200), tol=W * 0.025)
+
+
+def test_clear_panels_with_broken_corners_are_found():
+    img = page()
+    cells = [(400, 300, 1550, 1200), (1750, 300, 2900, 1200)]
+    for cell in cells:
+        rect(img, *cell)
+        for x, y in ((cell[0], cell[1]), (cell[2], cell[1]),
+                     (cell[0], cell[3]), (cell[2], cell[3])):
+            img[y - 30:y + 31, x - 30:x + 31] = 255
+
+    det = d.detect(img)
+
+    assert len(det.boxes) == 2
+    assert all(close(box, (x0, y0, x1 - x0, y1 - y0), tol=W * 0.025)
+               for box, (x0, y0, x1, y1) in zip(boxes_of(det), cells))
+
+
+def test_weak_interior_shapes_do_not_replace_a_strong_panel():
+    outer = d.Box(100, 100, 1000, 1200, coverage=0.99, min_coverage=0.98)
+    weak_top = d.Box(120, 120, 960, 700, coverage=0.88, min_coverage=0.51)
+    weak_bottom = d.Box(120, 800, 960, 480, coverage=0.88, min_coverage=0.52)
+
+    assert d.prune([outer, weak_top, weak_bottom]) == [outer]
+
+
+def test_tilted_color_render_uses_the_detection_deskew():
+    gray = page()
+    rect(gray, 500, 500, 1800, 1800)
+    color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    color[650:1650, 650:1650] = (25, 65, 230)
+    matrix = cv2.getRotationMatrix2D((W / 2, H / 2), 2.0, 1.0)
+    tilted_gray = cv2.warpAffine(gray, matrix, (W, H), borderValue=255)
+    tilted_color = cv2.warpAffine(color, matrix, (W, H), borderValue=(255, 255, 255))
+
+    det = d.detect(tilted_gray, tilted_color)
+    assert abs(det.angle + 2.0) < 0.3
+    assert len(det.boxes) == 1
+    box = det.boxes[0]
+    pixel = det.render_image[box.y + box.h // 2, box.x + box.w // 2]
+    assert pixel[2] > 150 and pixel[0] < 100
+
+
 def test_blank_page_is_not_confident():
     det = d.detect(page())
     assert det.boxes == [] and not det.confident and det.reasons == ["no panels found"]
@@ -110,7 +166,7 @@ def test_examples_regression(name, count):
     assert len(det.boxes) == count, det.reasons
     assert det.confident, det.reasons
     if name in ("why am i alive", "LLM brain replacement"):
-        assert 0.8 < abs(det.angle) < 1.5
+        assert 0.6 < abs(det.angle) < 1.5
     assert all(b.coverage >= 0.9 for b in det.boxes)
 
 

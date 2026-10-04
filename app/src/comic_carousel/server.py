@@ -17,12 +17,11 @@ import cv2
 import numpy as np
 
 from .detect import Box, Detection, detect_file
-from .pipeline import Result, export_detection, process
+from .pipeline import IMAGE_EXTENSIONS, Result, export_detection, find_images, process
 from .render import LAYOUTS, render_all
 
 STATIC = Path(__file__).resolve().parent.parent.parent / "static"
 STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
 PREVIEW_WIDTH = 1600
 THUMB_WIDTH = 216
 MAX_SESSIONS = 4  # each holds a full-resolution page in memory
@@ -33,12 +32,12 @@ class Session:
         self.id = secrets.token_hex(8)
         self.source = source
         self.detection = detection
-        scale = PREVIEW_WIDTH / detection.image.shape[1]
-        small = cv2.resize(detection.image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        scale = PREVIEW_WIDTH / detection.render_image.shape[1]
+        small = cv2.resize(detection.render_image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         self.preview = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
     def payload(self) -> dict:
-        h, w = self.detection.image.shape
+        h, w = self.detection.render_image.shape[:2]
         return {"status": "review", "name": self.source.name, "path": str(self.source), "id": self.id,
                 "w": w, "h": h, "boxes": [b.as_dict() for b in self.detection.boxes],
                 "panels": len(self.detection.boxes), "reasons": self.detection.reasons,
@@ -47,7 +46,7 @@ class Session:
 
 def exported_payload(result: Result) -> dict:
     return {"status": "exported", "name": result.source.name, "path": str(result.source),
-            "panels": len(result.detection.boxes), "dir": str(result.exported), "dir_name": result.exported.name,
+            "panels": result.panel_count, "dir": str(result.exported), "dir_name": result.exported.name,
             "files": [f.name for f in result.files], "layout": result.layout, "reasons": result.detection.reasons}
 
 
@@ -72,6 +71,21 @@ def pick_files() -> list[str]:
                               "--file-filter=Images | *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp"],
                              capture_output=True, text=True)
     return [line for line in run.stdout.splitlines() if line.strip()]  # cancel = nothing chosen
+
+
+def pick_folder() -> str:
+    system = platform.system()
+    if system == "Darwin":
+        run = subprocess.run(["osascript", "-e", 'POSIX path of (choose folder with prompt "Choose a folder of scans")'],
+                             capture_output=True, text=True)
+    elif system == "Windows":
+        script = ("Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                  "$d.Description = 'Choose a folder of scans'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }")
+        run = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", script], capture_output=True, text=True)
+    else:
+        run = subprocess.run(["zenity", "--file-selection", "--directory", "--title=Choose a folder of scans"],
+                             capture_output=True, text=True)
+    return run.stdout.strip()  # cancel = empty
 
 
 def reveal(folder: Path) -> None:
@@ -150,6 +164,12 @@ class App:
     def act_pick(self, _body: dict) -> dict:
         return {"paths": pick_files()}
 
+    def act_pick_folder(self, _body: dict) -> dict:
+        folder = pick_folder()
+        if not folder:
+            return {"folder": "", "paths": []}
+        return {"folder": folder, "paths": [str(p) for p in find_images(folder)]}
+
     def act_process(self, body: dict) -> dict:
         source = image_path(body.get("path"))
         parent = parent_dir(body.get("parent"))
@@ -162,19 +182,20 @@ class App:
 
     def act_render(self, body: dict) -> dict:
         session = self.session(body.get("id"))
-        h, w = session.detection.image.shape
+        h, w = session.detection.render_image.shape[:2]
         boxes = boxes_from(body.get("boxes", []), w, h)
-        panels, summary, chosen = render_all(session.detection.image, boxes, layout_from(body.get("layout")))
+        panels, summary, chosen = render_all(session.detection.render_image, boxes, layout_from(body.get("layout")))
         return {"panels": [thumbnail(p) for p in panels], "summary": thumbnail(summary), "layout": chosen}
 
     def act_export(self, body: dict) -> dict:
         session = self.session(body.get("id"))
-        h, w = session.detection.image.shape
+        h, w = session.detection.render_image.shape[:2]
         boxes = boxes_from(body.get("boxes", []), w, h)
         if not boxes:
             raise ValueError("There are no boxes to export.")
         result = export_detection(session.source, session.detection, boxes,
                                   parent_dir(body.get("parent")), layout_from(body.get("layout")))
+        session.detection.boxes = boxes
         return exported_payload(result)
 
     def act_reveal(self, body: dict) -> dict:

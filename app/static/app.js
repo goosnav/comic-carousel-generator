@@ -83,6 +83,20 @@ function exported(entry, r) {
 const queue = [];
 let busy = false;
 
+$('folder').onclick = async () => {
+  say('Choosing a folder…');
+  try {
+    queueFolder(await api('/api/pick_folder'));
+  } catch (e) { say(e.message); }
+};
+
+function queueFolder({ folder, paths }) {
+  if (!folder) { say('Nothing chosen.'); return; }
+  if (!paths.length) { say(`No images in ${folder.split(/[\\/]/).filter(Boolean).pop()}.`); return; }
+  say(`${paths.length} scan${paths.length === 1 ? '' : 's'} found. Working…`);
+  for (const path of paths) enqueue(path, false);
+}
+
 $('browse').onclick = async () => {
   say('Choosing…');
   try {

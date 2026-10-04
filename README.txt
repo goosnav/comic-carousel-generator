@@ -16,9 +16,10 @@ are not built yet; they are the next milestone and will remove that requirement.
 
 USE IT
 ------
-Press Browse, choose one or more scanned comics, and wait. Each scan gets a row naming the
-folder its PNGs went to: a new carousel-export-NNN folder beside the scan, holding one
-1080x1350 PNG per panel plus summary.png. Nothing is ever overwritten.
+Press "Choose a folder", pick the folder holding your scans, and wait. Every image in that
+folder is processed. Each scan gets its own folder beside it, named after it, for example
+"brain tumor raw-carousel-001", holding one 1080x1350 PNG per panel plus summary.png.
+Nothing is ever overwritten. "Choose scans" does the same for hand-picked files.
 
 Tick "Show me the boxes before exporting" to check the panels first. That editor also opens
 by itself for a scan the app is unsure about, and the row says why.
